@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,104 +7,131 @@ import {
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
-  Animated,
   Platform,
+  Alert,
 } from 'react-native';
-import { Mic, Check, User, Brain, Heart, Zap } from 'lucide-react-native';
+import { MessageSquare, Copy, RefreshCw, Bot, User, ChevronRight } from 'lucide-react-native';
 import { colors } from '@/constants/colors';
 import { useLang } from '@/context/LanguageContext';
-import { PERSONALITY_TRAITS, MOCK_TWEETS } from '@/constants/mockData';
+import { MOCK_REPLIES } from '@/constants/mockData';
 import { LanguageToggle } from '@/components/LanguageToggle';
 import { GradientCard } from '@/components/GradientCard';
-import { TagChip } from '@/components/TagChip';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { geminiService } from '@/services/geminiService';
+import { settingsService } from '@/services/supabaseService';
 
-type Step = 'personality' | 'interests' | 'voice';
+type ReplyStyle = 'diplomatic' | 'assertive' | 'humorous' | 'formal';
 
-const STEPS: Step[] = ['personality', 'interests', 'voice'];
+const REPLY_STYLES_EN: { key: ReplyStyle; label: string; desc: string; color: string }[] = [
+  { key: 'diplomatic', label: 'Diplomatic', desc: 'Calm & balanced', color: colors.primary },
+  { key: 'assertive', label: 'Assertive', desc: 'Direct & firm', color: colors.accent },
+  { key: 'humorous', label: 'Humorous', desc: 'Light & fun', color: colors.gold },
+  { key: 'formal', label: 'Formal', desc: 'Professional', color: colors.textSecondary },
+];
 
-export default function ProfileScreen() {
+const REPLY_STYLES_AR: { key: ReplyStyle; label: string; desc: string; color: string }[] = [
+  { key: 'diplomatic', label: 'دبلوماسي', desc: 'هادئ ومتوازن', color: colors.primary },
+  { key: 'assertive', label: 'حازم', desc: 'مباشر وصريح', color: colors.accent },
+  { key: 'humorous', label: 'فكاهي', desc: 'خفيف وممتع', color: colors.gold },
+  { key: 'formal', label: 'رسمي', desc: 'احترافي', color: colors.textSecondary },
+];
+
+export default function ChatScreen() {
   const { tr, lang, isRTL } = useLang();
-  const [currentStep, setCurrentStep] = useState<number>(0);
-  const [personality, setPersonality] = useState('');
-  const [habits, setHabits] = useState('');
-  const [selectedTraits, setSelectedTraits] = useState<string[]>([]);
-  const [interests, setInterests] = useState<string[]>([]);
-  const [interestInput, setInterestInput] = useState('');
-  const [voiceState, setVoiceState] = useState<'idle' | 'recording' | 'analyzing' | 'ready'>('idle');
-  const [saved, setSaved] = useState(false);
-
-  const stepLabels = [tr.stepPersonality, tr.stepInterests, tr.stepVoice];
-
-  const toggleTrait = (trait: string) => {
-    setSelectedTraits(prev =>
-      prev.includes(trait) ? prev.filter(t => t !== trait) : [...prev, trait]
-    );
-  };
-
-  const addInterest = () => {
-    if (interestInput.trim() && !interests.includes(interestInput.trim())) {
-      setInterests(prev => [...prev, interestInput.trim()]);
-      setInterestInput('');
-    }
-  };
-
-  const removeInterest = (item: string) => {
-    setInterests(prev => prev.filter(i => i !== item));
-  };
-
-  const handleVoiceRecord = () => {
-    if (voiceState === 'idle') {
-      setVoiceState('recording');
-      setTimeout(() => {
-        setVoiceState('analyzing');
-        setTimeout(() => setVoiceState('ready'), 2000);
-      }, 3000);
-    } else if (voiceState === 'ready') {
-      setVoiceState('idle');
-    }
-  };
-
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-  };
+  const [receivedMsg, setReceivedMsg] = useState('');
+  const [context, setContext] = useState('');
+  const [replyStyle, setReplyStyle] = useState<ReplyStyle>('diplomatic');
+  const [suggesting, setSuggesting] = useState(false);
+  const [replies, setReplies] = useState<string[]>([]);
+  const [activeReply, setActiveReply] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const [history, setHistory] = useState<{ msg: string; reply: string; style: ReplyStyle }[]>([]);
+  const [apiConfigured, setApiConfigured] = useState(false);
 
   const rtlText = { textAlign: isRTL ? ('right' as const) : ('left' as const) };
   const rtlRow = { flexDirection: isRTL ? ('row-reverse' as const) : ('row' as const) };
 
+  const replyStyles = lang === 'ar' ? REPLY_STYLES_AR : REPLY_STYLES_EN;
+
+  useEffect(() => {
+    loadApiKey();
+  }, []);
+
+  const loadApiKey = async () => {
+    const key = await settingsService.getGeminiKey();
+    if (key) {
+      geminiService.setApiKey(key);
+      setApiConfigured(true);
+    }
+  };
+
+  const handleSuggest = async () => {
+    if (!receivedMsg.trim()) return;
+
+    setSuggesting(true);
+    setReplies([]);
+
+    try {
+      if (apiConfigured && geminiService.isConfigured()) {
+        const reply = await geminiService.generateChatReply(
+          receivedMsg,
+          'Professional',
+          replyStyle,
+          context,
+          lang
+        );
+        setReplies([reply]);
+        setActiveReply(0);
+      } else {
+        setTimeout(() => {
+          const mockReplies = MOCK_REPLIES[replyStyle][lang] as string[];
+          setReplies(mockReplies);
+          setActiveReply(0);
+          setSuggesting(false);
+        }, 2000);
+        return;
+      }
+    } catch {
+      Alert.alert(
+        lang === 'ar' ? 'خطأ' : 'Error',
+        lang === 'ar' ? 'حدث خطأ في توليد الرد' : 'Error generating reply'
+      );
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
+  const handleUseReply = () => {
+    if (replies[activeReply]) {
+      setHistory(prev => [
+        { msg: receivedMsg, reply: replies[activeReply], style: replyStyle },
+        ...prev,
+      ]);
+      setReceivedMsg('');
+      setContext('');
+      setReplies([]);
+    }
+  };
+
+  const handleCopy = () => {
+    const text = replies[activeReply];
+    if (text && Platform.OS === 'web') {
+      navigator.clipboard?.writeText(text).catch(() => {});
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const styleInfo = replyStyles.find(s => s.key === replyStyle);
+
   return (
     <SafeAreaView style={styles.safe}>
-      {/* Header */}
       <View style={[styles.header, rtlRow]}>
-        <View style={styles.headerLeft}>
-          <Text style={[styles.headerTitle, rtlText]}>{tr.appName}</Text>
-          <Text style={[styles.headerSub, rtlText]}>{tr.onboardingSubtitle}</Text>
+        <View>
+          <Text style={[styles.headerTitle, rtlText]}>{tr.chatTitle}</Text>
+          <Text style={[styles.headerSub, rtlText]}>{tr.chatSubtitle}</Text>
         </View>
         <LanguageToggle />
-      </View>
-
-      {/* Step Indicator */}
-      <View style={[styles.stepsRow, rtlRow]}>
-        {stepLabels.map((label, idx) => (
-          <TouchableOpacity
-            key={idx}
-            onPress={() => setCurrentStep(idx)}
-            style={styles.stepItem}
-          >
-            <View style={[styles.stepDot, idx === currentStep && styles.stepDotActive, idx < currentStep && styles.stepDotDone]}>
-              {idx < currentStep ? (
-                <Check size={14} color={colors.primary} />
-              ) : (
-                <Text style={[styles.stepNum, idx === currentStep && styles.stepNumActive]}>{idx + 1}</Text>
-              )}
-            </View>
-            <Text style={[styles.stepLabel, idx === currentStep && styles.stepLabelActive]}>{label}</Text>
-          </TouchableOpacity>
-        ))}
-        <View style={styles.stepConnectorWrap}>
-          <View style={styles.stepConnector} />
-        </View>
       </View>
 
       <ScrollView
@@ -113,217 +140,166 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Step 0: Personality */}
-        {currentStep === 0 && (
-          <View>
-            <GradientCard variant="primary" style={styles.sectionCard}>
-              <View style={[styles.sectionHeader, rtlRow]}>
-                <Brain size={20} color={colors.primary} />
-                <Text style={[styles.sectionTitle, rtlText, { marginLeft: isRTL ? 0 : 8, marginRight: isRTL ? 8 : 0 }]}>
-                  {tr.personalityLabel}
-                </Text>
-              </View>
-              <TextInput
-                style={[styles.textarea, rtlText]}
-                value={personality}
-                onChangeText={setPersonality}
-                placeholder={tr.personalityPlaceholder}
-                placeholderTextColor={colors.textMuted}
-                multiline
-                numberOfLines={4}
-                textAlignVertical="top"
-              />
-            </GradientCard>
-
-            <GradientCard style={styles.sectionCard}>
-              <Text style={[styles.sectionTitle, rtlText]}>{tr.traitsLabel}</Text>
-              <View style={[styles.tagsWrap, isRTL && styles.tagsWrapRTL]}>
-                {PERSONALITY_TRAITS[lang].map(trait => (
-                  <TagChip
-                    key={trait}
-                    label={trait}
-                    selected={selectedTraits.includes(trait)}
-                    onPress={() => toggleTrait(trait)}
-                  />
-                ))}
-              </View>
-            </GradientCard>
-
-            <GradientCard style={styles.sectionCard}>
-              <View style={[styles.sectionHeader, rtlRow]}>
-                <Zap size={18} color={colors.gold} />
-                <Text style={[styles.sectionTitle, rtlText, { marginLeft: isRTL ? 0 : 8, marginRight: isRTL ? 8 : 0 }]}>
-                  {tr.habitsLabel}
-                </Text>
-              </View>
-              <TextInput
-                style={[styles.textarea, rtlText]}
-                value={habits}
-                onChangeText={setHabits}
-                placeholder={tr.habitsPlaceholder}
-                placeholderTextColor={colors.textMuted}
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-              />
-            </GradientCard>
+        <GradientCard variant="accent" style={styles.card}>
+          <View style={[styles.cardHeader, rtlRow]}>
+            <User size={16} color={colors.accent} />
+            <Text style={[styles.cardLabel, rtlText]}>{tr.pasteLabel}</Text>
           </View>
-        )}
+          <TextInput
+            style={[styles.textarea, rtlText]}
+            value={receivedMsg}
+            onChangeText={setReceivedMsg}
+            placeholder={tr.pastePlaceholder}
+            placeholderTextColor={colors.textMuted}
+            multiline
+            numberOfLines={4}
+            textAlignVertical="top"
+          />
+        </GradientCard>
 
-        {/* Step 1: Interests */}
-        {currentStep === 1 && (
-          <View>
-            <GradientCard variant="accent" style={styles.sectionCard}>
-              <View style={[styles.sectionHeader, rtlRow]}>
-                <Heart size={20} color={colors.accent} />
-                <Text style={[styles.sectionTitle, rtlText, { marginLeft: isRTL ? 0 : 8, marginRight: isRTL ? 8 : 0 }]}>
-                  {tr.interestsLabel}
-                </Text>
-              </View>
-              <View style={[styles.inputRow, rtlRow]}>
-                <TextInput
-                  style={[styles.inputField, rtlText]}
-                  value={interestInput}
-                  onChangeText={setInterestInput}
-                  placeholder={tr.interestPlaceholder}
-                  placeholderTextColor={colors.textMuted}
-                  onSubmitEditing={addInterest}
-                  returnKeyType="done"
-                />
-                <TouchableOpacity onPress={addInterest} style={styles.addBtn}>
-                  <Text style={styles.addBtnText}>{tr.addBtn}</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={[styles.tagsWrap, isRTL && styles.tagsWrapRTL]}>
-                {interests.map(item => (
-                  <TouchableOpacity
-                    key={item}
-                    onPress={() => removeInterest(item)}
-                    style={styles.interestTag}
-                  >
-                    <Text style={styles.interestTagText}>{item}</Text>
-                    <Text style={styles.removeX}>×</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              {interests.length === 0 && (
-                <Text style={[styles.emptyHint, rtlText]}>
-                  {lang === 'ar'
-                    ? 'أضف اهتماماتك مثل: التقنية، الكتب، السينما، ريادة الأعمال...'
-                    : 'Add your interests like: Tech, Books, Cinema, Entrepreneurship...'}
-                </Text>
-              )}
-            </GradientCard>
+        <GradientCard style={styles.card}>
+          <Text style={[styles.cardLabel, rtlText]}>{tr.contextLabel}</Text>
+          <TextInput
+            style={[styles.inputLine, rtlText]}
+            value={context}
+            onChangeText={setContext}
+            placeholder={tr.contextPlaceholder}
+            placeholderTextColor={colors.textMuted}
+          />
+        </GradientCard>
 
-            <GradientCard style={styles.sectionCard}>
-              <Text style={[styles.previewLabel, rtlText]}>
-                {lang === 'ar' ? 'مثال على محتوى بأسلوبك' : 'Sample content in your voice'}
-              </Text>
-              <Text style={[styles.sampleTweet, rtlText]}>
-                "{MOCK_TWEETS[lang][0]}"
-              </Text>
-            </GradientCard>
-          </View>
-        )}
-
-        {/* Step 2: Voice Clone */}
-        {currentStep === 2 && (
-          <View>
-            <GradientCard variant="gold" style={[styles.sectionCard, styles.voiceCard]}>
-              <Text style={[styles.voiceTitle, rtlText]}>{tr.voiceCloneTitle}</Text>
-              <Text style={[styles.voiceSubtitle, rtlText]}>{tr.voiceCloneSubtitle}</Text>
-
-              <View style={styles.micContainer}>
-                {/* Pulse rings */}
-                {voiceState === 'recording' && (
-                  <>
-                    <View style={[styles.pulseRing, styles.pulseRing1]} />
-                    <View style={[styles.pulseRing, styles.pulseRing2]} />
-                    <View style={[styles.pulseRing, styles.pulseRing3]} />
-                  </>
-                )}
-
-                <TouchableOpacity
-                  onPress={handleVoiceRecord}
+        <GradientCard style={styles.card}>
+          <Text style={[styles.cardLabel, rtlText]}>{tr.replyStyleLabel}</Text>
+          <View style={[styles.styleGrid, isRTL && styles.styleGridRTL]}>
+            {replyStyles.map(style => (
+              <TouchableOpacity
+                key={style.key}
+                onPress={() => setReplyStyle(style.key)}
+                style={[
+                  styles.styleCard,
+                  replyStyle === style.key && {
+                    borderColor: style.color,
+                    backgroundColor: `${style.color}18`,
+                  },
+                ]}
+                activeOpacity={0.75}
+              >
+                <Text
                   style={[
-                    styles.micButton,
-                    voiceState === 'recording' && styles.micButtonRecording,
-                    voiceState === 'analyzing' && styles.micButtonAnalyzing,
-                    voiceState === 'ready' && styles.micButtonReady,
+                    styles.styleLabel,
+                    { color: replyStyle === style.key ? style.color : colors.textPrimary },
                   ]}
-                  disabled={voiceState === 'analyzing'}
                 >
-                  {voiceState === 'ready' ? (
-                    <Check size={36} color={colors.gold} />
-                  ) : (
-                    <Mic
-                      size={36}
-                      color={voiceState === 'recording' ? '#fff' : voiceState === 'analyzing' ? colors.gold : colors.textSecondary}
-                    />
-                  )}
-                </TouchableOpacity>
+                  {style.label}
+                </Text>
+                <Text style={styles.styleDesc}>{style.desc}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </GradientCard>
+
+        <PrimaryButton
+          label={suggesting ? tr.suggestingReplies : tr.suggestReplies}
+          onPress={handleSuggest}
+          loading={suggesting}
+          disabled={!receivedMsg.trim()}
+          fullWidth
+          style={styles.suggestBtn}
+        />
+
+        {replies.length > 0 && (
+          <GradientCard variant="primary" style={styles.replyCard}>
+            <View style={[styles.replyHeaderRow, rtlRow]}>
+              <View style={[styles.aiTag, rtlRow]}>
+                <Bot size={13} color={colors.primary} />
+                <Text style={styles.aiTagText}>
+                  {lang === 'ar' ? 'توأمك الذكي' : 'AI Twin'}
+                </Text>
               </View>
-
-              <Text style={[styles.voiceStatus, rtlText]}>
-                {voiceState === 'idle' && tr.voiceTapToRecord}
-                {voiceState === 'recording' && tr.voiceRecording}
-                {voiceState === 'analyzing' && tr.voiceAnalyzing}
-                {voiceState === 'ready' && tr.voiceReady}
-              </Text>
-
-              {voiceState === 'ready' && (
-                <View style={styles.voiceWaveform}>
-                  {Array.from({ length: 20 }).map((_, i) => (
-                    <View
-                      key={i}
-                      style={[
-                        styles.waveBar,
-                        { height: 8 + Math.sin(i * 0.8) * 14 + Math.random() * 8 },
-                      ]}
-                    />
-                  ))}
+              {styleInfo && (
+                <View
+                  style={[
+                    styles.styleBadge,
+                    {
+                      backgroundColor: `${styleInfo.color}22`,
+                      borderColor: styleInfo.color,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.styleBadgeText, { color: styleInfo.color }]}>
+                    {styleInfo.label}
+                  </Text>
                 </View>
               )}
-            </GradientCard>
+            </View>
 
-            {voiceState !== 'ready' && (
-              <TouchableOpacity style={styles.skipBtn}>
-                <Text style={styles.skipText}>{tr.voiceSkip}</Text>
+            <Text style={[styles.replyText, rtlText]}>{replies[activeReply]}</Text>
+
+            <View style={[styles.replyActions, rtlRow]}>
+              <TouchableOpacity onPress={handleCopy} style={styles.replyActionBtn}>
+                <Copy size={14} color={copied ? colors.primary : colors.textMuted} />
+                <Text
+                  style={[
+                    styles.replyActionText,
+                    { color: copied ? colors.primary : colors.textMuted },
+                  ]}
+                >
+                  {copied ? tr.copied : tr.copyBtn}
+                </Text>
               </TouchableOpacity>
-            )}
+
+              {replies.length > 1 && (
+                <TouchableOpacity
+                  onPress={() => setActiveReply(p => (p + 1) % replies.length)}
+                  style={styles.replyActionBtn}
+                >
+                  <RefreshCw size={14} color={colors.accent} />
+                  <Text style={[styles.replyActionText, { color: colors.accent }]}>
+                    {tr.tryAnotherBtn}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity onPress={handleUseReply} style={styles.useBtn}>
+                <Text style={styles.useBtnText}>{tr.useReplyBtn}</Text>
+                <ChevronRight size={14} color={colors.textInverse} />
+              </TouchableOpacity>
+            </View>
+          </GradientCard>
+        )}
+
+        {replies.length === 0 && !suggesting && (
+          <View style={styles.emptyState}>
+            <MessageSquare size={42} color={colors.border} />
+            <Text style={[styles.emptyText, rtlText]}>
+              {lang === 'ar'
+                ? 'الصق رسالة واختر أسلوب الرد للحصول على اقتراحات ذكية'
+                : 'Paste a message and choose a reply style to get smart suggestions'}
+            </Text>
           </View>
         )}
 
-        {/* Navigation */}
-        <View style={[styles.navRow, rtlRow]}>
-          {currentStep > 0 && (
-            <PrimaryButton
-              label={lang === 'ar' ? 'السابق' : 'Back'}
-              onPress={() => setCurrentStep(p => p - 1)}
-              variant="outline"
-              style={styles.navBtn}
-            />
-          )}
-          {currentStep < STEPS.length - 1 ? (
-            <PrimaryButton
-              label={tr.continueBtn}
-              onPress={() => setCurrentStep(p => p + 1)}
-              style={styles.navBtn}
-            />
-          ) : (
-            <PrimaryButton
-              label={saved ? tr.profileSaved : tr.saveBtn}
-              onPress={handleSave}
-              variant={saved ? 'outline' : 'primary'}
-              style={styles.navBtn}
-            />
-          )}
-        </View>
-
-        {saved && (
-          <View style={styles.savedBanner}>
-            <Check size={16} color={colors.primary} />
-            <Text style={styles.savedText}>{tr.profileSaved}</Text>
+        {history.length > 0 && (
+          <View style={styles.historySection}>
+            <Text style={[styles.historyTitle, rtlText]}>
+              {lang === 'ar' ? 'السجل الأخير' : 'Recent History'}
+            </Text>
+            {history.slice(0, 3).map((item, idx) => (
+              <GradientCard key={idx} style={styles.historyCard}>
+                <View style={[styles.historyMsgRow, rtlRow]}>
+                  <User size={12} color={colors.textMuted} />
+                  <Text style={[styles.historyMsg, rtlText]} numberOfLines={2}>
+                    {item.msg}
+                  </Text>
+                </View>
+                <View style={[styles.historyReplyRow, rtlRow]}>
+                  <Bot size={12} color={colors.primary} />
+                  <Text style={[styles.historyReply, rtlText]} numberOfLines={2}>
+                    {item.reply}
+                  </Text>
+                </View>
+              </GradientCard>
+            ))}
           </View>
         )}
 
@@ -346,11 +322,8 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 12,
   },
-  headerLeft: {
-    flex: 1,
-  },
   headerTitle: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '800',
     color: colors.textPrimary,
     letterSpacing: -0.5,
@@ -360,88 +333,26 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 2,
   },
-  stepsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    gap: 4,
-    position: 'relative',
-  },
-  stepConnectorWrap: {
-    position: 'absolute',
-    top: '50%',
-    left: '15%',
-    right: '15%',
-    height: 1,
-    zIndex: -1,
-  },
-  stepConnector: {
-    height: 1,
-    backgroundColor: colors.border,
-    flex: 1,
-  },
-  stepItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  stepDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepDotActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryGlow,
-  },
-  stepDotDone: {
-    borderColor: colors.primary,
-    backgroundColor: 'transparent',
-  },
-  stepNum: {
-    fontSize: 12,
-    color: colors.textMuted,
-    fontWeight: '700',
-  },
-  stepNumActive: {
-    color: colors.primary,
-  },
-  stepLabel: {
-    fontSize: 11,
-    color: colors.textMuted,
-    textAlign: 'center',
-  },
-  stepLabelActive: {
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  scroll: {
-    flex: 1,
-  },
+  scroll: { flex: 1 },
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 8,
   },
-  sectionCard: {
+  card: {
     marginBottom: 12,
   },
-  sectionHeader: {
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    gap: 6,
+    marginBottom: 10,
   },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    flex: 1,
+  cardLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   textarea: {
     backgroundColor: colors.surfaceAlt,
@@ -452,23 +363,9 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 14,
     lineHeight: 22,
-    minHeight: 90,
+    minHeight: 100,
   },
-  tagsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 4,
-  },
-  tagsWrapRTL: {
-    flexDirection: 'row-reverse',
-  },
-  inputRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  inputField: {
-    flex: 1,
+  inputLine: {
     backgroundColor: colors.surfaceAlt,
     borderRadius: 10,
     borderWidth: 1,
@@ -477,170 +374,161 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
+    marginTop: 8,
   },
-  addBtn: {
-    backgroundColor: colors.accent,
+  styleGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  styleGridRTL: {
+    flexDirection: 'row-reverse',
+  },
+  styleCard: {
+    width: '47%',
+    padding: 12,
     borderRadius: 10,
-    paddingHorizontal: 16,
-    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
   },
-  addBtnText: {
-    color: '#fff',
-    fontWeight: '700',
+  styleLabel: {
     fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
   },
-  interestTag: {
+  styleDesc: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  suggestBtn: {
+    marginBottom: 16,
+  },
+  replyCard: {
+    marginBottom: 12,
+  },
+  replyHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.accentGlow,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    margin: 4,
-    gap: 6,
+    gap: 8,
+    marginBottom: 12,
   },
-  interestTagText: {
-    color: colors.accent,
-    fontSize: 13,
-    fontWeight: '500',
+  aiTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primaryGlow,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
-  removeX: {
-    color: colors.accent,
-    fontSize: 16,
+  aiTagText: {
+    color: colors.primary,
+    fontSize: 11,
     fontWeight: '700',
-    lineHeight: 18,
   },
-  emptyHint: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontStyle: 'italic',
-    marginTop: 8,
-    lineHeight: 20,
+  styleBadge: {
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
   },
-  previewLabel: {
+  styleBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  replyText: {
+    fontSize: 15,
+    color: colors.textPrimary,
+    lineHeight: 26,
+    marginBottom: 14,
+  },
+  replyActions: {
+    flexDirection: 'row',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 12,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  replyActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceAlt,
+  },
+  replyActionText: {
     fontSize: 12,
-    color: colors.textMuted,
     fontWeight: '600',
+  },
+  useBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    marginLeft: 'auto',
+  },
+  useBtnText: {
+    color: colors.textInverse,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 36,
+    gap: 12,
+  },
+  emptyText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    textAlign: 'center',
+    maxWidth: 280,
+    lineHeight: 22,
+  },
+  historySection: {
+    marginTop: 8,
+  },
+  historyTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 10,
   },
-  sampleTweet: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 22,
-    fontStyle: 'italic',
-  },
-  voiceCard: {
-    alignItems: 'center',
-    paddingVertical: 28,
-  },
-  voiceTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    marginBottom: 6,
-  },
-  voiceSubtitle: {
-    fontSize: 13,
-    color: colors.textMuted,
-    marginBottom: 28,
-    textAlign: 'center',
-  },
-  micContainer: {
-    width: 120,
-    height: 120,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  pulseRing: {
-    position: 'absolute',
-    borderRadius: 100,
-    borderWidth: 1.5,
-    borderColor: colors.gold,
-    opacity: 0.3,
-  },
-  pulseRing1: { width: 80, height: 80 },
-  pulseRing2: { width: 100, height: 100, opacity: 0.2 },
-  pulseRing3: { width: 120, height: 120, opacity: 0.1 },
-  micButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 2,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  micButtonRecording: {
-    backgroundColor: colors.error,
-    borderColor: colors.error,
-  },
-  micButtonAnalyzing: {
-    borderColor: colors.gold,
-    backgroundColor: colors.goldGlow,
-  },
-  micButtonReady: {
-    borderColor: colors.gold,
-    backgroundColor: colors.goldGlow,
-  },
-  voiceStatus: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  voiceWaveform: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    marginTop: 16,
-    height: 40,
-  },
-  waveBar: {
-    width: 4,
-    backgroundColor: colors.gold,
-    borderRadius: 2,
-    opacity: 0.8,
-  },
-  skipBtn: {
-    alignItems: 'center',
-    marginTop: 12,
-    paddingVertical: 8,
-  },
-  skipText: {
-    color: colors.textMuted,
-    fontSize: 13,
-    textDecorationLine: 'underline',
-  },
-  navRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
-    marginTop: 16,
+  historyCard: {
     marginBottom: 8,
-  },
-  navBtn: {
-    flex: 1,
-  },
-  savedBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
-    backgroundColor: colors.primaryGlow,
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 8,
   },
-  savedText: {
-    color: colors.primary,
-    fontWeight: '700',
-    fontSize: 14,
+  historyMsgRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  historyMsg: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.textMuted,
+    lineHeight: 18,
+  },
+  historyReplyRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  historyReply: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   bottomSpacer: {
     height: 20,
