@@ -8,7 +8,8 @@ import {
   TouchableOpacity,
   SafeAreaView,
 } from 'react-native';
-import { Check, User, Brain, Heart, Zap } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Check, User, Brain, Heart, Zap, Camera } from 'lucide-react-native';
 import { colors } from '@/constants/colors';
 import { useLang } from '@/context/LanguageContext';
 import { PERSONALITY_TRAITS, MOCK_TWEETS } from '@/constants/mockData';
@@ -23,6 +24,7 @@ const STEPS: Step[] = ['personality', 'interests'];
 
 export default function ProfileScreen() {
   const { tr, lang, isRTL } = useLang();
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [personality, setPersonality] = useState('');
   const [habits, setHabits] = useState('');
@@ -68,7 +70,6 @@ export default function ProfileScreen() {
         <LanguageToggle />
       </View>
 
-      {/* Step Indicator */}
       <View style={[styles.stepsRow, rtlRow]}>
         {stepLabels.map((label, idx) => (
           <TouchableOpacity
@@ -107,6 +108,25 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Photo Studio Entry */}
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => router.push('/(tabs)/index/studio')}
+        >
+          <GradientCard variant="gold" style={styles.studioCard}>
+            <View style={[styles.studioRow, rtlRow]}>
+              <View style={styles.studioIconWrap}>
+                <Camera size={22} color={colors.gold} />
+              </View>
+              <View style={styles.studioTextWrap}>
+                <Text style={[styles.studioTitle, rtlText]}>{tr.studioOpenBtn}</Text>
+                <Text style={[styles.studioDesc, rtlText]}>{tr.studioOpenDesc}</Text>
+              </View>
+              <Text style={styles.studioArrow}>›</Text>
+            </View>
+          </GradientCard>
+        </TouchableOpacity>
+
         {/* Step 0: Personality */}
         {currentStep === 0 && (
           <View>
@@ -372,6 +392,40 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 8,
+  },
+  studioCard: {
+    marginBottom: 16,
+  },
+  studioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  studioIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: colors.goldGlow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  studioTextWrap: {
+    flex: 1,
+  },
+  studioTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  studioDesc: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  studioArrow: {
+    fontSize: 22,
+    color: colors.textMuted,
+    fontWeight: '300',
   },
   sectionCard: {
     marginBottom: 12,

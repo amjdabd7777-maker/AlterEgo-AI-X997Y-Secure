@@ -73,6 +73,18 @@ export const t = {
     styleHumorous: 'Humorous',
     styleFormal: 'Formal',
 
+    // Photo Studio
+    studioTitle: 'Photo Studio',
+    studioSubtitle: 'Fine-tune your profile photo',
+    studioBrightness: 'Brightness',
+    studioContrast: 'Contrast',
+    studioRotation: 'Rotation',
+    studioSave: 'Save Changes',
+    studioReset: 'Reset',
+    studioSaved: 'Photo saved!',
+    studioOpenBtn: 'Photo Studio',
+    studioOpenDesc: 'Adjust lighting & angles',
+
     // Common
     loading: 'Loading...',
     language: 'العربية',
@@ -151,6 +163,18 @@ export const t = {
     styleAssertive: 'حازم',
     styleHumorous: 'فكاهي',
     styleFormal: 'رسمي',
+
+    // Photo Studio
+    studioTitle: 'استوديو الصور',
+    studioSubtitle: 'اضبط صورتك الشخصية',
+    studioBrightness: 'السطوع',
+    studioContrast: 'التباين',
+    studioRotation: 'التدوير',
+    studioSave: 'حفظ التعديلات',
+    studioReset: 'إعادة تعيين',
+    studioSaved: 'تم حفظ الصورة!',
+    studioOpenBtn: 'استوديو الصور',
+    studioOpenDesc: 'تحكم بالإضاءة والزوايا',
 
     // Common
     loading: 'جاري التحميل...',
