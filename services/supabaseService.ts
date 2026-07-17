@@ -1,9 +1,28 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+function createSupabaseClient(): SupabaseClient {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return {
+      auth: {
+        getUser: async () => ({ data: { user: null }, error: null }),
+        signInWithPassword: async () => ({ data: null, error: null }),
+        signOut: async () => ({ error: null }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+      },
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }), single: async () => ({ data: null, error: null }) }),
+        upsert: () => ({ eq: async () => ({ error: null }) }),
+        delete: () => ({ eq: async () => ({ error: null }) }),
+      }),
+    } as unknown as SupabaseClient;
+  }
+  return createClient(supabaseUrl, supabaseAnonKey);
+}
+
+export const supabase = createSupabaseClient();
 
 interface UserSettings {
   id: string;
